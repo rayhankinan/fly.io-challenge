@@ -10,15 +10,34 @@ import (
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
+type Counter struct {
+	data          []float64
+	readWriteLock sync.RWMutex
+}
+
+func (c *Counter) Read() []float64 {
+	c.readWriteLock.RLock()
+	defer c.readWriteLock.RUnlock()
+
+	return c.data
+}
+
+func (c *Counter) Append(value float64) {
+	c.readWriteLock.Lock()
+	defer c.readWriteLock.Unlock()
+
+	c.data = append(c.data, value)
+}
+
 func main() {
 	// Create a new node
 	n := maelstrom.NewNode()
 
 	// Create a counter to store the values
-	counter := []float64{}
-
-	// Create a lock to protect the counter
-	lock := sync.Mutex{}
+	counter := &Counter{
+		data:          []float64{},
+		readWriteLock: sync.RWMutex{},
+	}
 
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
 		// Unmarshal the body into a loosely typed map
@@ -33,11 +52,7 @@ func main() {
 		}
 
 		// Add the value to the counter with a lock
-		lock.Lock()
-
-		counter = append(counter, value)
-
-		lock.Unlock()
+		counter.Append(value)
 
 		// Update the message body to return back
 		newBody := make(map[string]interface{})
@@ -59,7 +74,7 @@ func main() {
 		newBody := make(map[string]interface{})
 
 		newBody["type"] = "read_ok"
-		newBody["messages"] = counter
+		newBody["messages"] = counter.Read()
 
 		// Reply the original message back with the updated body
 		return n.Reply(msg, newBody)
