@@ -19,3 +19,7 @@
 
 # Go workspace file
 go.work
+
+# Maelstrom Program
+maelstrom
+store
