@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/google/uuid"
+
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
 func main() {
 	n := maelstrom.NewNode()
 
-	n.Handle("echo", func(msg maelstrom.Message) error {
+	n.Handle("generate", func(msg maelstrom.Message) error {
 		// Unmarshal the body into a lossely typed map
 		var body map[string]interface{}
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -18,7 +20,8 @@ func main() {
 		}
 
 		// Update the message body to return back
-		body["type"] = "echo_ok"
+		body["type"] = "generate_ok"
+		body["id"] = uuid.New().String()
 
 		// Reply the original message back with the updated body
 		return n.Reply(msg, body)
