@@ -19,7 +19,6 @@ func main() {
 
 		// Update the message body to return back
 		newBody := make(map[string]interface{})
-
 		newBody["type"] = "echo_ok"
 		newBody["echo"] = inputBody["echo"]
 

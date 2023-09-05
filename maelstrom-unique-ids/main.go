@@ -21,7 +21,6 @@ func main() {
 
 		// Update the message body to return back
 		newBody := make(map[string]interface{})
-
 		newBody["type"] = "generate_ok"
 		newBody["id"] = uuid.New().String()
 
