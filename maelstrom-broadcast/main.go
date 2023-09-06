@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"sort"
 	"sync"
@@ -13,7 +11,7 @@ import (
 )
 
 type Element struct {
-	data      float64
+	data      int64
 	timestamp int64
 }
 
@@ -22,11 +20,11 @@ type Counter struct {
 	readWriteLock *sync.RWMutex
 }
 
-func (c *Counter) Read() []float64 {
+func (c *Counter) Read() []int64 {
 	c.readWriteLock.RLock()
 	defer c.readWriteLock.RUnlock()
 
-	result := []float64{}
+	result := []int64{}
 
 	for _, element := range c.arr {
 		result = append(result, element.data)
@@ -35,7 +33,7 @@ func (c *Counter) Read() []float64 {
 	return result
 }
 
-func (c *Counter) Insert(value float64, currentTimestamp int64) bool {
+func (c *Counter) Insert(value int64, currentTimestamp int64) bool {
 	c.readWriteLock.Lock()
 	defer c.readWriteLock.Unlock()
 
@@ -81,37 +79,32 @@ func main() {
 	topology := []string{}
 
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
-		// Unmarshal the body into a loosely typed map
-		var inputBody map[string]interface{}
+		// Unmarshal the body into a struct
+		var inputBody struct {
+			Message   int64 `json:"message"`
+			Timestamp int64 `json:"timestamp"`
+		}
 		if err := json.Unmarshal(msg.Body, &inputBody); err != nil {
 			return err
 		}
 
-		value, ok := inputBody["message"].(float64)
-		if !ok {
-			return errors.New(fmt.Sprintf("Invalid message type: %T", inputBody["message"]))
-		}
-
-		rawCurrentTimestamp, ok := inputBody["timestamp"].(float64)
-
-		// If the timestamp is not provided, use the current time
-		var currentTimestamp int64
-
-		if !ok {
-			currentTimestamp = time.Now().UnixNano()
-		} else {
-			// Kemungkinan bug: adanya overflow atau ketidakakuratan pembulatan timestamp
-			// Tapi sudah diterima oleh Jepsen
-			currentTimestamp = int64(rawCurrentTimestamp)
+		// If the timestamp is 0, we need to generate a new one
+		if inputBody.Timestamp == 0 {
+			inputBody.Timestamp = time.Now().UnixNano()
 		}
 
 		// If the value was inserted, we need to propagate it
-		if inserted := counter.Insert(value, currentTimestamp); inserted {
+		if inserted := counter.Insert(inputBody.Message, inputBody.Timestamp); inserted {
 			// Create new body for the message
-			propagateBody := make(map[string]interface{})
-			propagateBody["type"] = "broadcast"
-			propagateBody["message"] = value
-			propagateBody["timestamp"] = currentTimestamp
+			propagateBody := struct {
+				Type      string `json:"type"`
+				Message   int64  `json:"message"`
+				Timestamp int64  `json:"timestamp"`
+			}{
+				Type:      "broadcast",
+				Message:   inputBody.Message,
+				Timestamp: inputBody.Timestamp,
+			}
 
 			// Propagate the message to all nodes
 			wg := &sync.WaitGroup{}
@@ -119,7 +112,14 @@ func main() {
 			for _, node := range topology {
 				wg.Add(1)
 
-				go func(n *maelstrom.Node, wg *sync.WaitGroup, node string, body map[string]interface{}) {
+				go func(n *maelstrom.Node,
+					wg *sync.WaitGroup,
+					node string,
+					body struct {
+						Type      string `json:"type"`
+						Message   int64  `json:"message"`
+						Timestamp int64  `json:"timestamp"`
+					}) {
 					defer wg.Done()
 
 					n.RPC(node, body, func(msg maelstrom.Message) error {
@@ -141,12 +141,6 @@ func main() {
 	})
 
 	n.Handle("read", func(msg maelstrom.Message) error {
-		// Unmarshal the body into a loosely typed map
-		var inputBody map[string]interface{}
-		if err := json.Unmarshal(msg.Body, &inputBody); err != nil {
-			return err
-		}
-
 		// Update the message body to return back
 		newBody := make(map[string]interface{})
 		newBody["type"] = "read_ok"
@@ -157,27 +151,17 @@ func main() {
 	})
 
 	n.Handle("topology", func(msg maelstrom.Message) error {
-		// Unmarshal the body into a loosely typed map
-		var inputBody map[string]interface{}
+		// Unmarshal the body into a struct
+		var inputBody struct {
+			Topology map[string][]string `json:"topology"`
+		}
 		if err := json.Unmarshal(msg.Body, &inputBody); err != nil {
 			return err
 		}
 
-		// Get the topology from the message
-		inputTopology, ok := inputBody["topology"].(map[string]interface{})
-		if !ok {
-			return errors.New(fmt.Sprintf("Invalid topology type: %T", inputBody["topology"]))
-		}
-
-		// Convert the topology to a string array
-		inputNodes, ok := inputTopology[n.ID()].([]interface{})
-		if !ok {
-			return errors.New(fmt.Sprintf("Invalid nodes type: %T", inputTopology[n.ID()]))
-		}
-
 		// Set the topology
-		for _, node := range inputNodes {
-			topology = append(topology, node.(string))
+		for _, node := range inputBody.Topology[n.ID()] {
+			topology = append(topology, node)
 		}
 
 		// Update the message body to return back

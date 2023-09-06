@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 
 	"github.com/google/uuid"
@@ -13,12 +12,6 @@ func main() {
 	n := maelstrom.NewNode()
 
 	n.Handle("generate", func(msg maelstrom.Message) error {
-		// Unmarshal the body into a loosely typed map
-		var inputBody map[string]interface{}
-		if err := json.Unmarshal(msg.Body, &inputBody); err != nil {
-			return err
-		}
-
 		// Update the message body to return back
 		newBody := make(map[string]interface{})
 		newBody["type"] = "generate_ok"

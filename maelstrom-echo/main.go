@@ -11,16 +11,22 @@ func main() {
 	n := maelstrom.NewNode()
 
 	n.Handle("echo", func(msg maelstrom.Message) error {
-		// Unmarshal the body into a loosely typed map
-		var inputBody map[string]interface{}
+		// Unmarshal the body into a struct
+		var inputBody struct {
+			Echo string `json:"echo"`
+		}
 		if err := json.Unmarshal(msg.Body, &inputBody); err != nil {
 			return err
 		}
 
 		// Update the message body to return back
-		newBody := make(map[string]interface{})
-		newBody["type"] = "echo_ok"
-		newBody["echo"] = inputBody["echo"]
+		newBody := struct {
+			Type string `json:"type"`
+			Echo string `json:"echo"`
+		}{
+			Type: "echo_ok",
+			Echo: inputBody.Echo,
+		}
 
 		// Reply the original message back with the updated body
 		return n.Reply(msg, newBody)
