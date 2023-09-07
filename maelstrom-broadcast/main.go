@@ -50,7 +50,6 @@ func main() {
 		}
 
 		// If the value was inserted, we need to propagate it
-		// TODO: Bisa ditambahkan ke dalam buffered channel (asynchronous)
 		if inserted := counter.Insert(inputBody.Message, inputBody.Timestamp); inserted {
 			// Create new body for the message
 			propagateBody := PropagateBody{
