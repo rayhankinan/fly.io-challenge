@@ -18,13 +18,6 @@ type PropagateBody struct {
 }
 
 func main() {
-	// Create recover function
-	defer func() {
-		if err := recover(); err != nil {
-			log.Fatal(err)
-		}
-	}()
-
 	// Create a new node
 	n := maelstrom.NewNode()
 
@@ -67,37 +60,13 @@ func main() {
 				History:   append(inputBody.History, n.ID()),
 			}
 
-			// Propagate the message to all nodes
-			wg := new(sync.WaitGroup)
-
+			// Potential Bug: No worker available and the message channel is full (deadlock)
 			for _, node := range difference(topology, propagateBody.History) {
-				wg.Add(1)
-
-				go func(
-					n *maelstrom.Node,
-					wg *sync.WaitGroup,
-					messageChannel MessageChannel,
-					node string,
-					body PropagateBody,
-				) {
-					defer wg.Done()
-
-					// Create a new context
-					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-					defer cancel()
-
-					// Send the message to the node
-					if _, err := n.SyncRPC(ctx, node, body); err != nil {
-						// If the node is down, we need to store the message
-						messageChannel <- MessageQueueData{
-							node: node,
-							body: body,
-						}
-					}
-				}(n, wg, messageChannel, node, propagateBody)
+				messageChannel <- MessageQueueData{
+					node: node,
+					body: propagateBody,
+				}
 			}
-
-			wg.Wait()
 		}
 
 		// Update the message body to return back
@@ -157,6 +126,7 @@ func main() {
 					// Send the message to the node
 					if _, err := n.SyncRPC(ctx, message.node, message.body); err != nil {
 						// If the node is down, we need to store the message
+						// Potential Bug: No worker available and the message channel is full (deadlock)
 						messageChannel <- MessageQueueData{
 							node: message.node,
 							body: message.body,
@@ -169,6 +139,16 @@ func main() {
 			messageChannel,
 		)
 	}
+
+	// Create recover function
+	defer func() {
+		if err := recover(); err != nil {
+			log.Fatal(err)
+		}
+
+		// Close the message channel
+		close(messageChannel)
+	}()
 
 	// Run the node
 	if err := n.Run(); err != nil {
