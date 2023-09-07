@@ -109,16 +109,21 @@ func main() {
 		return n.Reply(msg, newBody)
 	})
 
-	// Run the worker
-	for i := 0; i < WORKER_SIZE; i++ {
-		go func(
-			n *maelstrom.Node,
-			messageChannel MessageChannel,
-		) {
-			for {
-				select {
-				// Get the message from the channel
-				case message := <-messageChannel:
+	// Run the watcher
+	go func(
+		n *maelstrom.Node,
+		messageChannel MessageChannel,
+	) {
+		for {
+			select {
+			// Get the message from the channel
+			case message := <-messageChannel:
+				// Create a new goroutine to send the message
+				go func(
+					n *maelstrom.Node,
+					messageChannel MessageChannel,
+					message MessageQueueData,
+				) {
 					// Create a new context
 					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 					defer cancel()
@@ -132,13 +137,13 @@ func main() {
 							body: message.body,
 						}
 					}
-				}
+				}(n, messageChannel, message)
 			}
-		}(
-			n,
-			messageChannel,
-		)
-	}
+		}
+	}(
+		n,
+		messageChannel,
+	)
 
 	// Create recover function
 	defer func() {

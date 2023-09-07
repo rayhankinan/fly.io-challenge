@@ -1,8 +1,7 @@
 package main
 
 const (
-	MAXIMUM_MESSAGE_QUEUE_SIZE = 65536
-	WORKER_SIZE                = 256
+	MAXIMUM_MESSAGE_QUEUE_SIZE = 100
 )
 
 type MessageQueueData struct {
