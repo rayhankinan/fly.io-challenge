@@ -1,68 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
-	"sort"
 	"sync"
 	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
-type Element struct {
-	data      int64
-	timestamp int64
-}
-
-type Counter struct {
-	arr           []Element
-	readWriteLock *sync.RWMutex
-}
-
-func (c *Counter) Read() []int64 {
-	c.readWriteLock.RLock()
-	defer c.readWriteLock.RUnlock()
-
-	result := []int64{}
-
-	for _, element := range c.arr {
-		result = append(result, element.data)
-	}
-
-	return result
-}
-
-func (c *Counter) Insert(value int64, currentTimestamp int64) bool {
-	c.readWriteLock.Lock()
-	defer c.readWriteLock.Unlock()
-
-	i, found := sort.Find(len(c.arr), func(i int) int {
-		if currentTimestamp < c.arr[i].timestamp {
-			return -1
-		} else if currentTimestamp > c.arr[i].timestamp {
-			return 1
-		} else {
-			return 0
-		}
-	})
-
-	if !found {
-		if i == len(c.arr) {
-			c.arr = append(c.arr, Element{
-				data:      value,
-				timestamp: currentTimestamp,
-			})
-		} else {
-			c.arr = append(c.arr[:i+1], c.arr[i:]...)
-			c.arr[i] = Element{
-				data:      value,
-				timestamp: currentTimestamp,
-			}
-		}
-	}
-
-	return !found
+type PropagateBody struct {
+	Type      string `json:"type"`
+	Message   int64  `json:"message"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 func main() {
@@ -72,7 +23,7 @@ func main() {
 	// Create a counter to store the values
 	counter := &Counter{
 		arr:           []Element{},
-		readWriteLock: &sync.RWMutex{},
+		readWriteLock: new(sync.RWMutex),
 	}
 
 	// Create a topology to store the nodes
@@ -96,36 +47,27 @@ func main() {
 		// If the value was inserted, we need to propagate it
 		if inserted := counter.Insert(inputBody.Message, inputBody.Timestamp); inserted {
 			// Create new body for the message
-			propagateBody := struct {
-				Type      string `json:"type"`
-				Message   int64  `json:"message"`
-				Timestamp int64  `json:"timestamp"`
-			}{
+			propagateBody := PropagateBody{
 				Type:      "broadcast",
 				Message:   inputBody.Message,
 				Timestamp: inputBody.Timestamp,
 			}
 
 			// Propagate the message to all nodes
-			wg := &sync.WaitGroup{}
+			wg := new(sync.WaitGroup)
 
 			for _, node := range topology {
 				wg.Add(1)
 
-				go func(n *maelstrom.Node,
+				go func(
+					n *maelstrom.Node,
 					wg *sync.WaitGroup,
 					node string,
-					body struct {
-						Type      string `json:"type"`
-						Message   int64  `json:"message"`
-						Timestamp int64  `json:"timestamp"`
-					}) {
+					body PropagateBody,
+				) {
 					defer wg.Done()
 
-					n.RPC(node, body, func(msg maelstrom.Message) error {
-						log.Printf("Received reply from %s", node)
-						return nil
-					})
+					n.SyncRPC(context.Background(), node, body)
 				}(n, wg, node, propagateBody)
 			}
 
@@ -172,6 +114,7 @@ func main() {
 		return n.Reply(msg, newBody)
 	})
 
+	// Run the node
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
 	}
