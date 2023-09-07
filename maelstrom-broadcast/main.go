@@ -60,7 +60,6 @@ func main() {
 				History:   append(inputBody.History, n.ID()),
 			}
 
-			// Potential Bug: No worker available and the message channel is full (deadlock)
 			for _, node := range difference(topology, propagateBody.History) {
 				messageChannel <- MessageQueueData{
 					node: node,
@@ -131,7 +130,6 @@ func main() {
 					// Send the message to the node
 					if _, err := n.SyncRPC(ctx, message.node, message.body); err != nil {
 						// If the node is down, we need to store the message
-						// Potential Bug: No worker available and the message channel is full (deadlock)
 						messageChannel <- MessageQueueData{
 							node: message.node,
 							body: message.body,
