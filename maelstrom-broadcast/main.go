@@ -29,6 +29,9 @@ func main() {
 	// Create a topology to store the nodes
 	topology := []string{}
 
+	// Create a channel to store the messages
+	messageChannel := make(MessageChannel, MAXIMUM_MESSAGE_QUEUE_SIZE)
+
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
 		// Unmarshal the body into a struct
 		var inputBody struct {
@@ -62,6 +65,7 @@ func main() {
 				go func(
 					n *maelstrom.Node,
 					wg *sync.WaitGroup,
+					messageChannel MessageChannel,
 					node string,
 					body PropagateBody,
 				) {
@@ -72,9 +76,14 @@ func main() {
 					defer cancel()
 
 					// Send the message to the node
-					n.SyncRPC(ctx, node, body)
-
-				}(n, wg, node, propagateBody)
+					if _, err := n.SyncRPC(ctx, node, body); err != nil {
+						// If the node is down, we need to store the message
+						messageChannel <- MessageQueueData{
+							node: node,
+							body: body,
+						}
+					}
+				}(n, wg, messageChannel, node, propagateBody)
 			}
 
 			wg.Wait()
@@ -119,6 +128,35 @@ func main() {
 		// Reply the original message back with the updated body
 		return n.Reply(msg, newBody)
 	})
+
+	// Run the worker
+	for i := 0; i < WORKER_SIZE; i++ {
+		go func(
+			n *maelstrom.Node,
+			messageChannel MessageChannel,
+		) {
+			for {
+				// Get the message from the channel
+				message := <-messageChannel
+
+				// Create a new context
+				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				defer cancel()
+
+				// Send the message to the node
+				if _, err := n.SyncRPC(ctx, message.node, message.body); err != nil {
+					// If the node is down, we need to store the message
+					messageChannel <- MessageQueueData{
+						node: message.node,
+						body: message.body,
+					}
+				}
+			}
+		}(
+			n,
+			messageChannel,
+		)
+	}
 
 	// Run the node
 	if err := n.Run(); err != nil {
