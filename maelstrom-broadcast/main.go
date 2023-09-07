@@ -31,7 +31,7 @@ func main() {
 	topology := []string{}
 
 	// Create a channel to store the messages
-	messageChannel := make(MessageChannel, MAXIMUM_MESSAGE_QUEUE_SIZE)
+	messageChannel := make(MessageChannel)
 
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
 		// Unmarshal the body into a struct
