@@ -11,10 +11,9 @@ import (
 )
 
 type PropagateBody struct {
-	Type      string   `json:"type"`
-	Message   int64    `json:"message"`
-	Timestamp int64    `json:"timestamp"`
-	History   []string `json:"history"`
+	Type      string `json:"type"`
+	Message   int64  `json:"message"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 func main() {
@@ -40,29 +39,25 @@ func main() {
 			return err
 		}
 
-		// If the timestamp is 0, we need to generate a new one
+		// If the timestamp is 0, it means that the message is from the client
 		if inputBody.Timestamp == 0 {
+			// If the timestamp is 0, we need to generate a new one
 			inputBody.Timestamp = time.Now().UnixNano()
-		}
 
-		if inputBody.History == nil {
-			inputBody.History = []string{}
-		}
+			// Insert the value into the counter
+			counter.Insert(inputBody.Message, inputBody.Timestamp)
 
-		// If the value was inserted, we need to propagate it
-		if inserted := counter.Insert(inputBody.Message, inputBody.Timestamp); inserted {
 			// Create new body for the message
 			propagateBody := PropagateBody{
 				Type:      "broadcast",
 				Message:   inputBody.Message,
 				Timestamp: inputBody.Timestamp,
-				History:   append(inputBody.History, n.ID()),
 			}
 
 			// Propagate the message to all nodes
 			wg := new(sync.WaitGroup)
 
-			for _, node := range difference(topology, propagateBody.History) {
+			for _, node := range topology {
 				wg.Add(1)
 
 				go func(
@@ -90,6 +85,9 @@ func main() {
 			}
 
 			wg.Wait()
+		} else {
+			// Insert the value into the counter
+			counter.Insert(inputBody.Message, inputBody.Timestamp)
 		}
 
 		// Update the message body to return back
@@ -111,17 +109,12 @@ func main() {
 	})
 
 	n.Handle("topology", func(msg maelstrom.Message) error {
-		// Unmarshal the body into a struct
-		var inputBody struct {
-			Topology map[string][]string `json:"topology"`
-		}
-		if err := json.Unmarshal(msg.Body, &inputBody); err != nil {
-			return err
-		}
-
 		// Set the topology
-		for _, node := range inputBody.Topology[n.ID()] {
-			topology = append(topology, node)
+		// We ignore the topology from the input
+		for _, node := range n.NodeIDs() {
+			if node != n.ID() {
+				topology = append(topology, node)
+			}
 		}
 
 		// Update the message body to return back

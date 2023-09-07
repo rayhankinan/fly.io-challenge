@@ -28,7 +28,7 @@ func (c *Counter) Read() []int64 {
 	return result
 }
 
-func (c *Counter) Insert(value int64, currentTimestamp int64) bool {
+func (c *Counter) Insert(value int64, currentTimestamp int64) {
 	c.readWriteLock.Lock()
 	defer c.readWriteLock.Unlock()
 
@@ -58,6 +58,4 @@ func (c *Counter) Insert(value int64, currentTimestamp int64) bool {
 			}
 		}
 	}
-
-	return !found
 }
