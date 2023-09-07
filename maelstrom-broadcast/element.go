@@ -32,6 +32,7 @@ func (c *Counter) Insert(value int64, currentTimestamp int64) bool {
 	c.readWriteLock.Lock()
 	defer c.readWriteLock.Unlock()
 
+	// Using binary search to find the index
 	i, found := sort.Find(len(c.arr), func(i int) int {
 		if currentTimestamp < c.arr[i].timestamp {
 			return -1
@@ -42,6 +43,7 @@ func (c *Counter) Insert(value int64, currentTimestamp int64) bool {
 		}
 	})
 
+	// If the value is not found, we need to insert it
 	if !found {
 		if i == len(c.arr) {
 			c.arr = append(c.arr, Element{

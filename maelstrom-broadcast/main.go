@@ -11,12 +11,20 @@ import (
 )
 
 type PropagateBody struct {
-	Type      string `json:"type"`
-	Message   int64  `json:"message"`
-	Timestamp int64  `json:"timestamp"`
+	Type      string   `json:"type"`
+	Message   int64    `json:"message"`
+	Timestamp int64    `json:"timestamp"`
+	History   []string `json:"history"`
 }
 
 func main() {
+	// Create recover function
+	defer func() {
+		if err := recover(); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
 	// Create a new node
 	n := maelstrom.NewNode()
 
@@ -34,10 +42,7 @@ func main() {
 
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
 		// Unmarshal the body into a struct
-		var inputBody struct {
-			Message   int64 `json:"message"`
-			Timestamp int64 `json:"timestamp"`
-		}
+		var inputBody PropagateBody
 		if err := json.Unmarshal(msg.Body, &inputBody); err != nil {
 			return err
 		}
@@ -47,19 +52,25 @@ func main() {
 			inputBody.Timestamp = time.Now().UnixNano()
 		}
 
+		if inputBody.History == nil {
+			inputBody.History = []string{}
+		}
+
 		// If the value was inserted, we need to propagate it
+		// TODO: Bisa ditambahkan ke dalam buffered channel (asynchronous)
 		if inserted := counter.Insert(inputBody.Message, inputBody.Timestamp); inserted {
 			// Create new body for the message
 			propagateBody := PropagateBody{
 				Type:      "broadcast",
 				Message:   inputBody.Message,
 				Timestamp: inputBody.Timestamp,
+				History:   append(inputBody.History, n.ID()),
 			}
 
 			// Propagate the message to all nodes
 			wg := new(sync.WaitGroup)
 
-			for _, node := range topology {
+			for _, node := range difference(topology, propagateBody.History) {
 				wg.Add(1)
 
 				go func(
@@ -136,19 +147,20 @@ func main() {
 			messageChannel MessageChannel,
 		) {
 			for {
+				select {
 				// Get the message from the channel
-				message := <-messageChannel
+				case message := <-messageChannel:
+					// Create a new context
+					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+					defer cancel()
 
-				// Create a new context
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				defer cancel()
-
-				// Send the message to the node
-				if _, err := n.SyncRPC(ctx, message.node, message.body); err != nil {
-					// If the node is down, we need to store the message
-					messageChannel <- MessageQueueData{
-						node: message.node,
-						body: message.body,
+					// Send the message to the node
+					if _, err := n.SyncRPC(ctx, message.node, message.body); err != nil {
+						// If the node is down, we need to store the message
+						messageChannel <- MessageQueueData{
+							node: message.node,
+							body: message.body,
+						}
 					}
 				}
 			}
@@ -160,6 +172,6 @@ func main() {
 
 	// Run the node
 	if err := n.Run(); err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 }
