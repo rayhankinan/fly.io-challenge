@@ -67,7 +67,13 @@ func main() {
 				) {
 					defer wg.Done()
 
-					n.SyncRPC(context.Background(), node, body)
+					// Create a new context
+					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+					defer cancel()
+
+					// Send the message to the node
+					n.SyncRPC(ctx, node, body)
+
 				}(n, wg, node, propagateBody)
 			}
 
