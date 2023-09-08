@@ -54,37 +54,13 @@ func main() {
 				Timestamp: inputBody.Timestamp,
 			}
 
-			// Propagate the message to all nodes
-			wg := new(sync.WaitGroup)
-
+			// Propagate the message to all nodes (using channel)
 			for _, node := range topology {
-				wg.Add(1)
-
-				go func(
-					n *maelstrom.Node,
-					wg *sync.WaitGroup,
-					messageChannel MessageChannel,
-					node string,
-					body PropagateBody,
-				) {
-					defer wg.Done()
-
-					// Create a new context
-					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-					defer cancel()
-
-					// Send the message to the node
-					if _, err := n.SyncRPC(ctx, node, body); err != nil {
-						// If the node is down, we need to store the message
-						messageChannel <- MessageQueueData{
-							node: node,
-							body: body,
-						}
-					}
-				}(n, wg, messageChannel, node, propagateBody)
+				messageChannel <- MessageQueueData{
+					node: node,
+					body: propagateBody,
+				}
 			}
-
-			wg.Wait()
 		} else {
 			// Insert the value into the counter
 			counter.Insert(inputBody.Message, inputBody.Timestamp)
